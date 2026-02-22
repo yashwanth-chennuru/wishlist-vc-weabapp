@@ -1,0 +1,12 @@
+{
+  "name": "wishlist-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Wishlist dashboard with metadata scraping API",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

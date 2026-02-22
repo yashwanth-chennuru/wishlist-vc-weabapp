@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Wishlist Dashboard</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="app__header">
+        <p class="eyebrow">Wishlist Dashboard</p>
+        <h1>Your Dream Cart</h1>
+        <p class="subtitle">Add from product links or create manual items.</p>
+      </header>
+
+      <section class="composer">
+        <div class="composer__modes" role="tablist" aria-label="Add item method">
+          <button
+            id="modeLinkBtn"
+            class="mode-btn is-active"
+            type="button"
+            data-mode="link"
+            role="tab"
+            aria-selected="true"
+          >
+            Add by Link
+          </button>
+          <button
+            id="modeManualBtn"
+            class="mode-btn"
+            type="button"
+            data-mode="manual"
+            role="tab"
+            aria-selected="false"
+          >
+            Add Manually
+          </button>
+        </div>
+
+        <form id="linkForm" class="entry-form" novalidate>
+          <label for="productLink">Product URL</label>
+          <div class="entry-row">
+            <input
+              id="productLink"
+              name="productLink"
+              type="url"
+              placeholder="https://example.com/product"
+              autocomplete="off"
+              required
+            />
+            <button id="addLinkBtn" type="submit">Add Item</button>
+          </div>
+        </form>
+
+        <form id="manualForm" class="entry-form is-hidden" novalidate>
+          <label for="manualName">Item Name</label>
+          <input
+            id="manualName"
+            name="manualName"
+            type="text"
+            placeholder="Nike sneakers, iPhone, H&M t-shirt..."
+            autocomplete="off"
+            required
+          />
+
+          <label for="manualImage">Image URL (optional)</label>
+          <input
+            id="manualImage"
+            name="manualImage"
+            type="url"
+            placeholder="https://images.example.com/item.jpg"
+            autocomplete="off"
+          />
+
+          <label for="manualLink">Product URL (optional)</label>
+          <div class="entry-row">
+            <input
+              id="manualLink"
+              name="manualLink"
+              type="url"
+              placeholder="https://example.com/product"
+              autocomplete="off"
+            />
+            <button type="submit">Add Item</button>
+          </div>
+        </form>
+
+        <p id="status" class="status" aria-live="polite"></p>
+      </section>
+
+      <section class="wishlist">
+        <div class="wishlist__head">
+          <h2>Items</h2>
+          <p id="itemCount" class="item-count">0 items</p>
+        </div>
+        <div id="wishlistGrid" class="wishlist__grid"></div>
+        <p id="emptyState" class="empty-state">
+          No items yet. Add your first product above.
+        </p>
+      </section>
+    </main>
+
+    <template id="wishCardTemplate">
+      <article class="wish-card">
+        <div class="wish-card__image-shell">
+          <img class="wish-card__image" src="" alt="" />
+        </div>
+        <div class="wish-card__body">
+          <h3 class="wish-card__title"></h3>
+          <p class="wish-card__source"></p>
+          <div class="wish-card__actions">
+            <div class="wish-card__left-actions">
+              <label class="dark-toggle" title="Toggle gray preview">
+                <input
+                  class="dark-toggle__input"
+                  type="checkbox"
+                  aria-label="Toggle gray preview"
+                />
+              </label>
+              <button
+                class="open-link-btn"
+                type="button"
+                title="Open product link"
+                aria-label="Open product link"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7ZM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7Z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <button class="delete-btn" type="button">Delete</button>
+          </div>
+        </div>
+      </article>
+    </template>
+
+    <script src="script.js"></script>
+  </body>
+</html>
