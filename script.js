@@ -1,6 +1,5 @@
 const DEFAULT_LINK =
   "https://www.nike.in/nike-air-force-1-07-nn/p/25135848?q=unmistakable&searchRedirection=1";
-const STORAGE_KEY = "wishlist-items-v2";
 
 const modeLinkBtn = document.getElementById("modeLinkBtn");
 const modeManualBtn = document.getElementById("modeManualBtn");
@@ -19,7 +18,7 @@ const wishCardTemplate = document.getElementById("wishCardTemplate");
 
 const state = {
   mode: "link",
-  items: loadItems(),
+  items: [],
 };
 
 let latestRequestId = 0;
@@ -33,13 +32,6 @@ function setStatus(message, type = "neutral") {
   if (type === "ok") {
     statusText.classList.add("is-ok");
   }
-}
-
-function createId() {
-  if (window.crypto && typeof window.crypto.randomUUID === "function") {
-    return window.crypto.randomUUID();
-  }
-  return `wish-${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 }
 
 function pickNameFromUrl(url) {
@@ -94,60 +86,49 @@ function sanitizeHttpUrl(urlString) {
     return "";
   }
   try {
-    const parsed = new URL(urlString);
+    const parsed = new URL(String(urlString).trim());
     if (parsed.protocol === "http:" || parsed.protocol === "https:") {
       return parsed.toString();
     }
-    return "";
   } catch (error) {
     return "";
   }
+  return "";
 }
 
-function sanitizeImageUrl(urlString) {
-  return sanitizeHttpUrl(urlString);
-}
-
-function sanitizeProductUrl(urlString) {
-  return sanitizeHttpUrl(urlString);
-}
-
-function loadItems() {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-
-    return parsed
-      .map((item) => ({
-        id: typeof item.id === "string" ? item.id : createId(),
-        name: typeof item.name === "string" ? item.name.trim() : "",
-        image: sanitizeImageUrl(item.image),
-        source: typeof item.source === "string" ? item.source : "Manual item",
-        link: sanitizeProductUrl(typeof item.link === "string" ? item.link : ""),
-        dark: Boolean(item.dark),
-      }))
-      .filter((item) => item.name.length > 0)
-      .map((item) => ({
-        ...item,
-        image: item.image || createPlaceholderSvg(item.name),
-      }));
-  } catch (error) {
-    return [];
+function sanitizeImageValue(value) {
+  if (typeof value !== "string") {
+    return "";
   }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  if (trimmed.startsWith("data:image/")) {
+    return trimmed;
+  }
+  return sanitizeHttpUrl(trimmed);
 }
 
-function persistItems() {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
-  } catch (error) {
-    setStatus("Could not save to local storage in this browser mode.", "error");
-  }
+function normalizeItem(raw) {
+  const name =
+    typeof raw?.name === "string" && raw.name.trim()
+      ? raw.name.trim()
+      : "Wishlist Item";
+  const link = sanitizeHttpUrl(raw?.link);
+  const sourceRaw =
+    typeof raw?.source === "string" ? raw.source.trim() : "";
+  const source = sourceRaw || (link ? toHostLabel(link) : "Manual item");
+  const image = sanitizeImageValue(raw?.image) || createPlaceholderSvg(name);
+
+  return {
+    id: typeof raw?.id === "string" ? raw.id : "",
+    name,
+    image,
+    source,
+    link,
+    dark: Boolean(raw?.dark),
+  };
 }
 
 function updateCounts() {
@@ -187,6 +168,7 @@ function renderItems() {
     source.textContent = item.link ? `Source: ${item.source}` : "Source: Manual item";
     darkInput.checked = item.dark;
     applyDarkClass(imageShell, item.dark);
+
     if (item.link) {
       openLinkBtn.disabled = false;
       openLinkBtn.dataset.link = item.link;
@@ -202,31 +184,6 @@ function renderItems() {
   updateCounts();
 }
 
-function addItem(item) {
-  state.items.unshift(item);
-  persistItems();
-  renderItems();
-}
-
-function removeItem(itemId) {
-  const next = state.items.filter((item) => item.id !== itemId);
-  if (next.length === state.items.length) {
-    return;
-  }
-  state.items = next;
-  persistItems();
-  renderItems();
-}
-
-function updateItemDark(itemId, dark) {
-  const item = state.items.find((entry) => entry.id === itemId);
-  if (!item) {
-    return;
-  }
-  item.dark = dark;
-  persistItems();
-}
-
 function setMode(mode) {
   state.mode = mode;
   const isLink = mode === "link";
@@ -239,20 +196,80 @@ function setMode(mode) {
   setStatus("");
 }
 
-async function getMetadata(productUrl) {
-  const response = await fetch(
-    `/api/metadata?url=${encodeURIComponent(productUrl)}`,
-    {
-      method: "GET",
-      headers: { Accept: "application/json" },
-    }
-  );
+async function requestJson(url, options = {}) {
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      Accept: "application/json",
+      ...(options.headers || {}),
+    },
+  });
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.details || payload.error || "Metadata request failed.");
+    throw new Error(payload.error || payload.details || "Request failed.");
   }
   return payload;
+}
+
+async function fetchItemsFromServer() {
+  const payload = await requestJson("/api/items");
+  return Array.isArray(payload.items) ? payload.items : [];
+}
+
+async function createItemOnServer(itemPayload) {
+  const payload = await requestJson("/api/items", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify(itemPayload),
+  });
+  return normalizeItem(payload.item || {});
+}
+
+async function deleteItemOnServer(itemId) {
+  await requestJson(`/api/items/${encodeURIComponent(itemId)}`, {
+    method: "DELETE",
+  });
+}
+
+async function updateItemDarkOnServer(itemId, dark) {
+  const payload = await requestJson(`/api/items/${encodeURIComponent(itemId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+    },
+    body: JSON.stringify({ dark }),
+  });
+  return normalizeItem(payload.item || {});
+}
+
+async function getMetadata(productUrl) {
+  const payload = await requestJson(
+    `/api/metadata?url=${encodeURIComponent(productUrl)}`,
+    { method: "GET" }
+  );
+  return payload;
+}
+
+function addItemToState(item) {
+  state.items.unshift(item);
+  renderItems();
+}
+
+function removeItemFromState(itemId) {
+  state.items = state.items.filter((item) => item.id !== itemId);
+  renderItems();
+}
+
+function replaceItemInState(nextItem) {
+  const idx = state.items.findIndex((item) => item.id === nextItem.id);
+  if (idx === -1) {
+    return;
+  }
+  state.items[idx] = nextItem;
+  renderItems();
 }
 
 modeLinkBtn.addEventListener("click", () => setMode("link"));
@@ -273,6 +290,9 @@ linkForm.addEventListener("submit", async (event) => {
   addLinkBtn.disabled = true;
   setStatus("Fetching product metadata...");
 
+  let itemPayload;
+  let usedPlaceholder = false;
+
   try {
     const metadata = await getMetadata(parsed.toString());
     if (requestId !== latestRequestId) {
@@ -280,44 +300,54 @@ linkForm.addEventListener("submit", async (event) => {
     }
 
     const name = (metadata.name || pickNameFromUrl(parsed)).trim();
-    const image = sanitizeImageUrl(metadata.image) || createPlaceholderSvg(name);
-
-    addItem({
-      id: createId(),
+    itemPayload = {
       name,
-      image,
+      image: sanitizeImageValue(metadata.image) || createPlaceholderSvg(name),
       source: toHostLabel(metadata.resolvedUrl || parsed.toString()),
-      link: sanitizeProductUrl(parsed.toString()),
+      link: sanitizeHttpUrl(parsed.toString()),
       dark: false,
-    });
-
-    productLinkInput.value = "";
-    setStatus("Item added from link.", "ok");
+    };
+    usedPlaceholder = !sanitizeImageValue(metadata.image);
   } catch (error) {
     if (requestId !== latestRequestId) {
       return;
     }
 
     const name = pickNameFromUrl(parsed);
-    addItem({
-      id: createId(),
+    itemPayload = {
       name,
       image: createPlaceholderSvg(name),
       source: toHostLabel(parsed.toString()),
-      link: sanitizeProductUrl(parsed.toString()),
+      link: sanitizeHttpUrl(parsed.toString()),
       dark: false,
-    });
+    };
+    usedPlaceholder = true;
+  }
 
+  try {
+    const created = await createItemOnServer(itemPayload);
+    if (requestId !== latestRequestId) {
+      return;
+    }
+    addItemToState(created);
+    productLinkInput.value = "";
     setStatus(
-      "Site metadata was blocked for this URL. Added with placeholder image.",
-      "error"
+      usedPlaceholder
+        ? "Item added. Metadata was limited, so placeholder image is used."
+        : "Item added from link.",
+      "ok"
     );
+  } catch (error) {
+    if (requestId !== latestRequestId) {
+      return;
+    }
+    setStatus(`Could not save item: ${error.message}`, "error");
   } finally {
     addLinkBtn.disabled = false;
   }
 });
 
-manualForm.addEventListener("submit", (event) => {
+manualForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = manualNameInput.value.trim();
   const imageInput = manualImageInput.value.trim();
@@ -328,33 +358,38 @@ manualForm.addEventListener("submit", (event) => {
     return;
   }
 
-  if (imageInput && !sanitizeImageUrl(imageInput)) {
+  if (imageInput && !sanitizeHttpUrl(imageInput)) {
     setStatus("Manual image URL should start with http:// or https://", "error");
     return;
   }
 
-  if (manualLinkValue && !sanitizeProductUrl(manualLinkValue)) {
+  if (manualLinkValue && !sanitizeHttpUrl(manualLinkValue)) {
     setStatus("Product URL should start with http:// or https://", "error");
     return;
   }
 
-  const cleanManualLink = sanitizeProductUrl(manualLinkValue);
-  addItem({
-    id: createId(),
+  const cleanManualLink = sanitizeHttpUrl(manualLinkValue);
+  const payload = {
     name,
-    image: sanitizeImageUrl(imageInput) || createPlaceholderSvg(name),
+    image: sanitizeImageValue(imageInput) || createPlaceholderSvg(name),
     source: cleanManualLink ? toHostLabel(cleanManualLink) : "Manual item",
     link: cleanManualLink,
     dark: false,
-  });
+  };
 
-  manualNameInput.value = "";
-  manualImageInput.value = "";
-  manualLinkInput.value = "";
-  setStatus("Manual item added.", "ok");
+  try {
+    const created = await createItemOnServer(payload);
+    addItemToState(created);
+    manualNameInput.value = "";
+    manualImageInput.value = "";
+    manualLinkInput.value = "";
+    setStatus("Manual item added.", "ok");
+  } catch (error) {
+    setStatus(`Could not save item: ${error.message}`, "error");
+  }
 });
 
-wishlistGrid.addEventListener("click", (event) => {
+wishlistGrid.addEventListener("click", async (event) => {
   const openLinkBtn = event.target.closest(".open-link-btn");
   if (openLinkBtn) {
     const link = openLinkBtn.dataset.link || "";
@@ -382,11 +417,19 @@ wishlistGrid.addEventListener("click", (event) => {
     return;
   }
 
-  removeItem(card.dataset.id);
-  setStatus("Item deleted.", "ok");
+  const itemId = card.dataset.id;
+  deleteBtn.disabled = true;
+  try {
+    await deleteItemOnServer(itemId);
+    removeItemFromState(itemId);
+    setStatus("Item deleted.", "ok");
+  } catch (error) {
+    setStatus(`Could not delete item: ${error.message}`, "error");
+    deleteBtn.disabled = false;
+  }
 });
 
-wishlistGrid.addEventListener("change", (event) => {
+wishlistGrid.addEventListener("change", async (event) => {
   const toggle = event.target.closest(".dark-toggle__input");
   if (!toggle) {
     return;
@@ -397,11 +440,49 @@ wishlistGrid.addEventListener("change", (event) => {
     return;
   }
 
+  const itemId = card.dataset.id;
+  const item = state.items.find((entry) => entry.id === itemId);
+  if (!item) {
+    return;
+  }
+
+  const nextDark = toggle.checked;
+  const previousDark = item.dark;
+  item.dark = nextDark;
+
   const imageShell = card.querySelector(".wish-card__image-shell");
-  applyDarkClass(imageShell, toggle.checked);
-  updateItemDark(card.dataset.id, toggle.checked);
+  applyDarkClass(imageShell, nextDark);
+
+  try {
+    const updatedItem = await updateItemDarkOnServer(itemId, nextDark);
+    replaceItemInState(updatedItem);
+  } catch (error) {
+    item.dark = previousDark;
+    toggle.checked = previousDark;
+    applyDarkClass(imageShell, previousDark);
+    setStatus(`Could not update preview setting: ${error.message}`, "error");
+  }
 });
 
-productLinkInput.value = DEFAULT_LINK;
-setMode("link");
-renderItems();
+async function initialize() {
+  productLinkInput.value = DEFAULT_LINK;
+  setMode("link");
+  setStatus("Loading shared wishlist...");
+
+  try {
+    const items = await fetchItemsFromServer();
+    state.items = items.map((item) => normalizeItem(item));
+    renderItems();
+    if (state.items.length === 0) {
+      setStatus("No items yet. Add your first product.");
+    } else {
+      setStatus("Shared wishlist loaded.", "ok");
+    }
+  } catch (error) {
+    state.items = [];
+    renderItems();
+    setStatus(`Could not load shared wishlist: ${error.message}`, "error");
+  }
+}
+
+initialize();
