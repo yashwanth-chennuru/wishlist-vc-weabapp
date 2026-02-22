@@ -8,8 +8,27 @@ const PORT = Number(process.env.PORT || 8080);
 const ROOT_DIR = __dirname;
 const PUBLIC_FILES = new Set(["/index.html", "/styles.css", "/script.js"]);
 const DATA_DIR = path.join(ROOT_DIR, "data");
-const ITEMS_FILE = path.join(DATA_DIR, "wishlist-items.json");
+const FALLBACK_ITEMS_FILE = path.join(ROOT_DIR, "wishlist-items.json");
 const MAX_BODY_BYTES = 1024 * 1024;
+
+function resolveItemsFilePath() {
+  if (!fs.existsSync(DATA_DIR)) {
+    return path.join(DATA_DIR, "wishlist-items.json");
+  }
+
+  try {
+    if (fs.statSync(DATA_DIR).isDirectory()) {
+      return path.join(DATA_DIR, "wishlist-items.json");
+    }
+  } catch (error) {
+    return FALLBACK_ITEMS_FILE;
+  }
+
+  // If "data" exists as a file, store items at repo root to avoid path conflicts.
+  return FALLBACK_ITEMS_FILE;
+}
+
+const ITEMS_FILE = resolveItemsFilePath();
 
 class HttpError extends Error {
   constructor(statusCode, message) {
@@ -305,8 +324,9 @@ function inferSource(link) {
 }
 
 function ensureStoreReady() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  const parentDir = path.dirname(ITEMS_FILE);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true });
   }
   if (!fs.existsSync(ITEMS_FILE)) {
     fs.writeFileSync(ITEMS_FILE, "[]", "utf8");
