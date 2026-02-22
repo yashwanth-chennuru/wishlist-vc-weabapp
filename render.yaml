@@ -3,5 +3,6 @@ services:
     name: wishlist-dashboard
     runtime: node
     plan: free
+    healthCheckPath: /healthz
     buildCommand: npm install
     startCommand: npm start
