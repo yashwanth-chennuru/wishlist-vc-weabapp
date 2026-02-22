@@ -209,7 +209,7 @@ h2 {
 .wish-card__image-shell {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 4 / 5;
   background: #f5e9de;
   overflow: hidden;
 }
